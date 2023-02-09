@@ -108,10 +108,10 @@ func (q *Queries) ListTransfers(ctx context.Context, arg ListTransfersParams) ([
 	return items, nil
 }
 
-const updateTransfers = `-- name: UpdateTransfers :many
+const updateTransfers = `-- name: UpdateTransfers :one
 UPDATE transfers 
 SET from_account_id = $1, to_account_id = $2, amount = $3
-WHERE id = $2
+WHERE id = $4
 RETURNING id, from_account_id, to_account_id, amount, created_at
 `
 
@@ -119,33 +119,23 @@ type UpdateTransfersParams struct {
 	FromAccountID int64 `json:"from_account_id"`
 	ToAccountID   int64 `json:"to_account_id"`
 	Amount        int64 `json:"amount"`
+	ID            int64 `json:"id"`
 }
 
-func (q *Queries) UpdateTransfers(ctx context.Context, arg UpdateTransfersParams) ([]Transfer, error) {
-	rows, err := q.db.QueryContext(ctx, updateTransfers, arg.FromAccountID, arg.ToAccountID, arg.Amount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Transfer
-	for rows.Next() {
-		var i Transfer
-		if err := rows.Scan(
-			&i.ID,
-			&i.FromAccountID,
-			&i.ToAccountID,
-			&i.Amount,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) UpdateTransfers(ctx context.Context, arg UpdateTransfersParams) (Transfer, error) {
+	row := q.db.QueryRowContext(ctx, updateTransfers,
+		arg.FromAccountID,
+		arg.ToAccountID,
+		arg.Amount,
+		arg.ID,
+	)
+	var i Transfer
+	err := row.Scan(
+		&i.ID,
+		&i.FromAccountID,
+		&i.ToAccountID,
+		&i.Amount,
+		&i.CreatedAt,
+	)
+	return i, err
 }
