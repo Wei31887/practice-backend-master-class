@@ -7,21 +7,27 @@ import (
 )
 
 // Store structure for all functions to do queries and transactions
-type Store struct {
+type Store interface {
+	Querier
+	TranserTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
+}
+
+// Store structure for all functions to do queries and transactions
+type SQLStore struct {
 	*Queries
 	db *sql.DB  // for transction db
 }
 
 // Create a new Store structure for queries transaction
-func NewStore(db *sql.DB) *Store {
-	return &Store{
+func NewStore(db *sql.DB) *SQLStore {
+	return &SQLStore{
 		db: db,
 		Queries: New(db),
 	}
 }
 
 // execTX: executes the function witn database transaction
-func (store *Store) execTX(ctx context.Context, fn func(*Queries) error) error {
+func (store *SQLStore) execTX(ctx context.Context, fn func(*Queries) error) error {
 	tx, err := store.db.BeginTx(ctx, nil) 
 	if err != nil {
 		return nil
@@ -56,17 +62,12 @@ type TransferTxResult struct {
 
 // TransferTx perform a money transfer from one account to another account
 // Creates the transfer record, account entries, and update accounts' balance in a single transaction.
-func (store *Store) TranserTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error) {
+func (store *SQLStore) TranserTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error) {
 	var result TransferTxResult
 
 
 	err := store.execTX(ctx, func(q *Queries) (err error){
 		// 1. create the transfer record
-		// result.Transfer, err = q.CreateTransfer(ctx, CreateTransferParams{
-		// 	FromAccountID: arg.FromAccountID,
-		// 	ToAccountID: arg.ToAccountID,
-		// 	Amount: arg.Amount,
-		// })
 		result.Transfer, err = q.CreateTransfer(ctx, CreateTransferParams(arg))
 		if err != nil {
 			return 
@@ -90,35 +91,44 @@ func (store *Store) TranserTx(ctx context.Context, arg TransferTxParams) (Transf
 			return
 		}
 
-		// TODO: 3. balance two ammount 
-		account1, err := q.GetAccountForUpdate(ctx, arg.FromAccountID)
-		if err != nil {
-			return 
+		// 3. balance two ammount 
+		if arg.FromAccountID < arg.ToAccountID {
+			result.FromAccount, result.ToAccount, err = addMoney(ctx, q, arg.FromAccountID, -arg.Amount, arg.ToAccountID, arg.Amount)
+			if err != nil {
+				return
+			}
+		} else {
+			result.ToAccount, result.FromAccount, err = addMoney(ctx, q, arg.ToAccountID, arg.Amount, arg.FromAccountID, -arg.Amount)
+			if err != nil {
+				return
+			}
 		}
-		result.FromAccount, err = q.UpdateAccount(ctx, UpdateAccountParams{
-			ID: account1.ID,
-			Balance: account1.Balance - arg.Amount,
-		})
-		if err != nil {
-			return 
-		}
-
-		account2, err := q.GetAccountForUpdate(ctx, arg.ToAccountID)
-		if err != nil {
-			return 
-		}
-		result.ToAccount, err = q.UpdateAccount(ctx, UpdateAccountParams{
-			ID: account2.ID,
-			Balance: account2.Balance + arg.Amount,
-		})
-		if err != nil {
-			return 
-		}
-
 
 		return nil
 	})
 
 	return result, err
+}
+
+func addMoney(
+	ctx context.Context,
+	q *Queries,
+    account1ID int64,
+	amount1 int64,
+    account2ID int64,
+    amount2 int64,
+) (account1 Account, account2 Account, err error) {
+	account1, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID: account1ID,
+		Amount: amount1,
+	})
+	if err != nil {
+		return 
+	}
+	account2, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID: account2ID,
+		Amount: amount2,
+	})
+	return
 }
 

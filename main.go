@@ -1,11 +1,31 @@
 package main
 
-import "fmt"
+import (
+	"database/sql"
+	"lesson/simple-bank/api"
+	db "lesson/simple-bank/db/sqlc"
+	"lesson/simple-bank/initial"
+	"log"
 
+	_ "github.com/lib/pq"
+)
 
 func main() {
-	v := make(map[int]int, 0)
-	// v[1] = 1
-	// a := v[2]
-	fmt.Println(v)
+  config, err := initial.LoadingConfig(".")
+  if err != nil {
+    log.Fatal("Can't load config, ", err)
+  }
+  conn, err := sql.Open(config.DbDriver, config.DbSource)
+  if err!= nil {
+    panic(err)
+  }
+  defer conn.Close()
+
+  store := db.NewStore(conn)
+  server := api.NewServer(store)
+
+  err = server.Start(config.ServerAddress)
+  if err!= nil {
+    log.Fatal("Can't start server: ", err)
+  }
 }
