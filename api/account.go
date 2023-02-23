@@ -2,8 +2,10 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	db "lesson/simple-bank/db/sqlc"
+	"lesson/simple-bank/token"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +13,6 @@ import (
 )
 
 type createAccountRequest struct {
-	Owner    string `json:"owner" binding:"required"`
 	Currency string `json:"currency" binding:"required,oneof=TWD USD EUR"`
 }
 
@@ -23,8 +24,9 @@ func (server *Server) CreateAccount(ctx *gin.Context) {
 		return
 	}
 
+	userPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	arg := db.CreateAccountParams{
-		Owner:    req.Owner,
+		Owner:    userPayload.Username,
         Currency: req.Currency,
 	}
 	account, err := server.store.CreateAccount(ctx, arg)
@@ -56,7 +58,7 @@ func (server *Server) GetAccount(ctx *gin.Context) {
 	}
 
 	account, err := server.store.GetAccount(ctx, req.ID)
-	if err!= nil {
+	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.JSON(http.StatusNotFound, errResponse(err))
 			return
@@ -64,6 +66,14 @@ func (server *Server) GetAccount(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, errResponse(err))
         return
 	}
+
+	userPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	if account.Owner != userPayload.Username {
+		err := errors.New("account doesn't belong to the authenticated user")
+		ctx.JSON(http.StatusUnauthorized, errResponse(err))
+        return	
+	}
+	
 	ctx.JSON(http.StatusOK, account)
 }
 
@@ -79,7 +89,9 @@ func (server *Server) ListAccount(ctx *gin.Context) {
         return
 	}
 
+	userPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
 	arg := db.ListAccountParams {
+		Owner: userPayload.Username,
 		Limit: req.PageSize,
 		Offset: (req.PageId-1) * req.PageSize, 
 	}

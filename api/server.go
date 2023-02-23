@@ -37,13 +37,18 @@ func (server *Server) setRouterGroup() {
 	router := gin.Default()
 
 	router.POST("users", server.CreateUser)
-	router.GET("users", server.GetUser)
-
-	router.POST("accounts", server.CreateAccount)
-	router.GET("accounts/:id", server.GetAccount)
-	router.GET("accounts", server.ListAccount)
-
-	router.POST("transfers", server.CreateTransfer)
+	router.POST("users/login", server.LoginUser)
+	router.POST("token/refresh", server.RefreshToken)
+	
+	
+	authGroup := router.Group("").Use(authMiddleware(server.tokenMaker))
+	{	
+		authGroup.GET("users", server.GetUser)
+		authGroup.POST("accounts", server.CreateAccount)
+		authGroup.GET("accounts/:id", server.GetAccount)
+		authGroup.GET("accounts", server.ListAccount)
+		authGroup.POST("transfers", server.CreateTransfer)
+	}
 
 	server.router = router
 }

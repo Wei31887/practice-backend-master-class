@@ -2,7 +2,9 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	db "lesson/simple-bank/db/sqlc"
+	"lesson/simple-bank/token"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,12 +24,20 @@ func (server *Server) CreateTransfer(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, errResponse(err))
 		return
 	}
-
-	if !server.vaildAccount(ctx, req.FromAccountID, req.Currency) {
+	fromAccount, valid := server.vaildAccount(ctx, req.FromAccountID, req.Currency) 
+	if !valid {
 		return
 	}
-	if !server.vaildAccount(ctx, req.ToAccountID, req.Currency) {
+
+	_, valid = server.vaildAccount(ctx, req.ToAccountID, req.Currency)
+	if !valid {
 		return
+	}
+
+	userPayload := ctx.MustGet(authorizationPayloadKey).(*token.Payload)
+	if fromAccount.Owner != userPayload.Username {
+		err := errors.New("from account does not belong to you")
+		ctx.JSON(http.StatusUnauthorized, errResponse(err))
 	}
 
 	arg := db.TransferTxParams{
@@ -44,21 +54,21 @@ func (server *Server) CreateTransfer(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
-func (server *Server) vaildAccount(ctx *gin.Context, accountId int64, currency string ) bool { 
+func (server *Server) vaildAccount(ctx *gin.Context, accountId int64, currency string ) (db.Account, bool) { 
 	account, err := server.store.GetAccount(ctx, accountId)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			ctx.JSON(http.StatusNotFound, errResponse(err))
-			return false
+			return account, false
 		}
 		ctx.JSON(http.StatusInternalServerError, errResponse(err))
-        return false
+        return account, false
 	}
 
 	if account.Currency != currency { 
 		ctx.JSON(http.StatusBadRequest, errResponse(err))
-        return false
+        return account, false
 	}
 
-	return true
+	return account, true
 }
